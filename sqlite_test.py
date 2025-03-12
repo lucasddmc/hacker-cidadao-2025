@@ -1,11 +1,11 @@
 import sqlite3
+import json
+import sendMessage as sm
 from datetime import datetime, timedelta
 
 # Conexão com banco de dados SQLite em memória
 conn = sqlite3.connect(":memory:")
 cur = conn.cursor()
-
-
 
 # Criação das tabelas
 cur.execute("""
@@ -13,7 +13,8 @@ CREATE TABLE gestantes (
     id INTEGER PRIMARY KEY,
     nome TEXT,
     telefone TEXT,
-    semana_gestacao INTEGER DEFAULT 0
+    semana_gestacao INTEGER DEFAULT 0, 
+    quantidade_consultas INTEGER DEFAULT 0
 )""")
 cur.execute("""
 CREATE TABLE bebes (
@@ -35,7 +36,7 @@ CREATE TABLE consultas (
 cur.execute("""
 CREATE TABLE mensagens (
     id INTEGER PRIMARY KEY,
-    mae_id INTEGER,
+    mae_id INTEGER, 
     conteudo TEXT,
     canal TEXT
 )""")
@@ -142,7 +143,7 @@ conn.commit()
 
 # Inserção de uma gestante fictícia
 cur.execute("INSERT INTO gestantes (nome, telefone, semana_gestacao) VALUES (?, ?, ?)",
-            ("Maria", "+5581999999999", 0))
+            ("Maria", "5581997804085", 0)) # salvo com o numero de lucas 
 
 # Atualização da semana de gestação para simular marcos:
 cur.execute("UPDATE gestantes SET semana_gestacao = 12 WHERE nome = 'Maria'")   # 12 semanas (3 meses)
@@ -168,7 +169,14 @@ cur.execute("UPDATE consultas SET lembrete_enviado = 1 WHERE data = ? AND lembre
 conn.commit()
 
 # Consulta à tabela de mensagens para obter todas as mensagens geradas
-cur.execute("SELECT canal, conteudo FROM mensagens ORDER BY id")
+cur.execute("SELECT canal, conteudo, mae_id FROM mensagens ORDER BY id")
 mensagens_geradas = cur.fetchall()
-for canal, conteudo in mensagens_geradas:
-    print(f"{canal}: {conteudo}")
+
+for canal, conteudo, mae_id in mensagens_geradas:
+    cur.execute("SELECT telefone FROM gestantes WHERE id = ?", (mae_id,)) 
+    telefone = cur.fetchone()
+    if telefone:  
+        sm.sendMessage(telefone[0], conteudo)
+    else: 
+        print("id da mãe não encontrado")
+
