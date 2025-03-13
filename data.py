@@ -17,7 +17,8 @@ GESTANTES = {
         "telefone": "+5581999999999",
         "inicio_gestacao": "19/12/2024", 
         "ultima_consulta": "13/02/2025",
-        "unidade_saude": ""
+        "unidade_saude": "",
+        "consultas_marcadas": []
     }
 }
 UNIDADES_SAUDE = [

@@ -2,6 +2,7 @@ import requests
 import json
 from typing import Optional, Dict, Any
 from data import *
+import re
 
 class TelegramBot:
     def __init__(self, token: str, chat_id: int):
@@ -11,6 +12,7 @@ class TelegramBot:
 
     def _send_message(self, payload: dict, use_json: bool = True) -> bool:
         """Helper function to send messages with optional JSON payload."""
+        print(self.chat_id)
         try:
             if use_json:
                 response = requests.post(f"{self.base_url}/sendMessage", json=payload)
@@ -107,9 +109,15 @@ class TelegramBot:
                     if unidade['nome'] in text:
                         GESTANTES[1]['unidade_saude'] = unidade['nome']
                         break  # Stop checking after the first match
+            elif re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+                response_text = f"Sua consulta foi marcada com sucesso para o dia {text}! 📅✅"
+                GESTANTES[1]['consultas_marcadas'].append(text)
 
             self.send_message(response_text)
             self.last_update_id = current_update_id + 1
 
 # Initialize bot instance with credentials
-bot = TelegramBot("7525923053:AAG0qW2N98Xx1FI4Pz3Be0_QNEDihnwKVqs", 1104502035)
+#chat_id de lucas 
+#bot = TelegramBot("7525923053:AAG0qW2N98Xx1FI4Pz3Be0_QNEDihnwKVqs", 1104502035)
+#chat_id de ana 
+bot = TelegramBot("7525923053:AAG0qW2N98Xx1FI4Pz3Be0_QNEDihnwKVqs", 6893886384)

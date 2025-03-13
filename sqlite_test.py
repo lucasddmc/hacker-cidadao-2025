@@ -29,12 +29,20 @@ def daily_pregnancy_monitor():
             }
 
             if weeks_pregnant <= 28:
+                if weeks_pregnant == 12: 
+                    message = f"""Sua gestação está avançando, e a partir de agora já é possível realizar o exame de sexagem fetal para descobrir o sexo do bebê! 🩷💙
+                    Esse exame é opcional e pode ser feito a partir da 12ª semana de gestação, analisando uma amostra do seu sangue. Se tiver interesse, converse com um profissional de saúde para saber mais sobre a disponibilidade e como realizá-lo.
+                    Cada fase da gestação traz novas descobertas e momentos especiais."""
+                    MESSAGE_QUEUE.put((message, custom_keyboard))
                 if today.year > ultima_consulta.year or (today.year == ultima_consulta.year and today.month > ultima_consulta.month):
                     ultima_consulta = today
                     consultas_disponiveis = [today+timedelta(days=1), today+timedelta(days=2), today+timedelta(days=3)]
                     message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
                     📅 De acordo com seu período gestacional, suas consultas devem ocorrer mensalmente. Escolha uma das opções abaixo para marcar sua próxima consulta:
-                    1. {consultas_disponiveis[0]}\n2. {consultas_disponiveis[1]}\n3. {consultas_disponiveis[2]}\n outro"""
+                    1. {consultas_disponiveis[0]}
+                    2. {consultas_disponiveis[1]}
+                    3. {consultas_disponiveis[2]}
+                    outro"""
                     MESSAGE_QUEUE.put((message, custom_keyboard))
                     print("Já faz um mês desde a última consulta!")
                 else:
@@ -120,11 +128,14 @@ def add_mother():
         "one_time_keyboard": True
     }
     # First welcome message
-    welcome_msg = f"""Olá! 😊 Parabéns por iniciar o seu pré-natal! 
+    welcome_msg = f"""Olá, {data.get("nome")}! 😊 Parabéns por iniciar o seu pré-natal! 
     Para garantir o melhor acompanhamento para você e seu bebê, é importante agendar sua próxima consulta o quanto antes.
-    Aqui estão as Unidades Básicas de Saúde (UBS) mais próximas do seu endereço"""
+    Aqui estão as Unidades Saúde (US) mais próximas do seu endereço"""
     MESSAGE_QUEUE.put((welcome_msg, custom_keyboard))
-
+    transport_msg = f"""🎉 Seu Passe Livre para Gestantes está a caminho! 🚌💙  
+    Agora que você iniciou seu pré-natal, você tem direito ao Passe Livre para Gestantes, garantindo transporte gratuito no transporte público durante toda a gestação. Esse benefício facilita suas idas às consultas e exames, ajudando a garantir um acompanhamento completo para você e seu bebê.  
+    📦 O vale já está a caminho da sua residência e, em alguns dias, estará em suas mãos. Fique atenta à entrega! 💙"""
+    MESSAGE_QUEUE.put(transport_msg)
     return jsonify({"id": mother_id, "message": "Mãe cadastrada com sucesso!"}), 201
 
 
