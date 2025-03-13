@@ -2,95 +2,105 @@ from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
 import time
 import threading
+import queue
 from send_message import bot
 from data import *
 
 app = Flask(__name__)
 mother_id_counter = 1
-
+def is_item_in_queue(q, item):
+    """Verifica se um item já está na fila."""
+    # Converte a fila em uma lista temporária para verificação
+    with q.mutex:  # Usa o mutex para garantir segurança em ambientes multithread
+        return item in list(q.queue)
 def update_gestante(unidade, mother_id=1):
     GESTANTES[mother_id]["unidade_saude"] = UNIDADES_SAUDE[unidade]['nome']
-
 def daily_pregnancy_monitor():
-    for mother_id, mother in GESTANTES.items():
-        if "inicio_gestacao" in mother:
-            start_date = datetime.strptime(mother["inicio_gestacao"], "%d/%m/%Y").date()
-            weeks_pregnant = (today - start_date).days // 7  # Convert days to weeks
-            ultima_consulta =  datetime.strptime(mother["ultima_consulta"], "%d/%m/%Y").date()
+    """Check each mother's status daily and send messages if needed."""
+    while True:
+        today_date = datetime.today().date()
+        for mother_id, mother in list(GESTANTES.items()):
+            if "inicio_gestacao" in mother:
+                start_date = datetime.strptime(mother["inicio_gestacao"], "%d/%m/%Y").date()
+                weeks_pregnant = (today_date - start_date).days // 7
+                ultima_consulta = datetime.strptime(mother["ultima_consulta"], "%d/%m/%Y").date()
 
-            custom_keyboard = {
-                "keyboard": [
-                    [{"text": f"{CONSULTAS_DISPONIVEIS[0]}"}],
-                    [{"text": f"{CONSULTAS_DISPONIVEIS[1]}"}],
-                    [{"text": f"{CONSULTAS_DISPONIVEIS[2]}"}],
-                ],
-                "resize_keyboard": True,
-                "one_time_keyboard": True
-            }
+                consultas_disponiveis = [
+                    today_date + timedelta(days=1),
+                    today_date + timedelta(days=2),
+                    today_date + timedelta(days=3)
+                ]
 
-            if weeks_pregnant <= 28:
-                if weeks_pregnant == 12: 
+                custom_keyboard = {
+                    "keyboard": [[{"text": str(date)}] for date in consultas_disponiveis],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+
+                
+                if weeks_pregnant == 12 and not mother.get("sent_week_12"):
+                    print("criando a mensagem")
                     message = f"""Sua gestação está avançando, e a partir de agora já é possível realizar o exame de sexagem fetal para descobrir o sexo do bebê! 🩷💙
                     Esse exame é opcional e pode ser feito a partir da 12ª semana de gestação, analisando uma amostra do seu sangue. Se tiver interesse, converse com um profissional de saúde para saber mais sobre a disponibilidade e como realizá-lo.
-                    Cada fase da gestação traz novas descobertas e momentos especiais."""
-                    MESSAGE_QUEUE.put((message, custom_keyboard))
-                if today.year > ultima_consulta.year or (today.year == ultima_consulta.year and today.month > ultima_consulta.month):
-                    ultima_consulta = today
-                    consultas_disponiveis = [today+timedelta(days=1), today+timedelta(days=2), today+timedelta(days=3)]
-                    message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
-                    📅 De acordo com seu período gestacional, suas consultas devem ocorrer mensalmente. Escolha uma das opções abaixo para marcar sua próxima consulta:
-                    1. {consultas_disponiveis[0]}
-                    2. {consultas_disponiveis[1]}
-                    3. {consultas_disponiveis[2]}
-                    outro"""
-                    MESSAGE_QUEUE.put((message, custom_keyboard))
-                    print("Já faz um mês desde a última consulta!")
-                else:
-                   print("Ainda não faz um mês desde a última consulta.")
+                    Cada fase da gestação traz novas descobertas e momentos especiais."""  
+                    if not is_item_in_queue(MESSAGE_QUEUE, (message, custom_keyboard)):
+                        MESSAGE_QUEUE.put((message, custom_keyboard))
+                        print(f"Item adicionado: {message}")
+                    else:
+                        print(f"Item duplicado: {message}. Não será adicionado.")
+                   
+                    mother["sent_week_12"] = True  
+
                 
-            elif weeks_pregnant <= 36:
-                data_limite = ultima_consulta + timedelta(days=15)
-                if today == data_limite: 
-                    ultima_consulta = today 
-                    consultas_disponiveis = [today+timedelta(days=1), today+timedelta(days=2), today+timedelta(days=3)]
-                    message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
-                    📅 De acordo com seu período gestacional, suas consultas devem ocorrer [inserir frequência: mensalmente, quinzenalmente ou semanalmente]. Escolha uma das opções abaixo para marcar sua próxima consulta:
-                    1. {consultas_disponiveis[0]}\n2. {consultas_disponiveis[1]}\n3. {consultas_disponiveis[2]}
-                    Caso precise de outro horário, responda com a palavra "Outro" e nossa equipe entrará em contato para mais opções.
-                    Após a confirmação, você receberá um lembrete antes da consulta."""
-                    MESSAGE_QUEUE.put((message, custom_keyboard))
-                    print("Já faz 15 dias desde a ultima consulta")
+                if weeks_pregnant <= 28:
+                    if (today_date.year > ultima_consulta.year or 
+                        (today_date.year == ultima_consulta.year and today_date.month > ultima_consulta.month)):
+                        mother["ultima_consulta"] = today_date.strftime("%d/%m/%Y")
+                        message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
+                        📅 De acordo com seu período gestacional, suas consultas devem ocorrer mensalmente. Escolha uma das opções abaixo para marcar sua próxima consulta:
+                        1. {consultas_disponiveis[0]}
+                        2. {consultas_disponiveis[1]}
+                        3. {consultas_disponiveis[2]}
+                        outro"""
+                        MESSAGE_QUEUE.put((message, custom_keyboard))
+
+                
+                elif weeks_pregnant <= 36:
+                    if today_date >= ultima_consulta + timedelta(days=15):
+                        mother["ultima_consulta"] = today_date.strftime("%d/%m/%Y")
+                        message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
+                        📅 De acordo com seu período gestacional, suas consultas devem ocorrer [inserir frequência: mensalmente, quinzenalmente ou semanalmente]. Escolha uma das opções abaixo para marcar sua próxima consulta:
+                        1. {consultas_disponiveis[0]}\n2. {consultas_disponiveis[1]}\n3. {consultas_disponiveis[2]}
+                        Caso precise de outro horário, responda com a palavra "Outro" e nossa equipe entrará em contato para mais opções.
+                        Após a confirmação, você receberá um lembrete antes da consulta."""
+                        MESSAGE_QUEUE.put((message, custom_keyboard))
+
+                
                 else:
-                   print("Ainda não faz 15 dias desde a ultima consulta.")
-            else: 
-                data_limite = ultima_consulta + timedelta(days=7)
-                if today == data_limite: 
-                    ultima_consulta = today 
-                    consultas_disponiveis = [today+timedelta(days=1), today+timedelta(days=2), today+timedelta(days=3)]
-                    message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
-                    📅 De acordo com seu período gestacional, suas consultas devem ocorrer [inserir frequência: mensalmente, quinzenalmente ou semanalmente]. Escolha uma das opções abaixo para marcar sua próxima consulta:
-                    1. {consultas_disponiveis[0]}\n2. {consultas_disponiveis[1]}\n3. {consultas_disponiveis[2]}
-                    Caso precise de outro horário, responda com a palavra "Outro" e nossa equipe entrará em contato para mais opções.
-                    Após a confirmação, você receberá um lembrete antes da consulta."""
-                    MESSAGE_QUEUE.put((message, custom_keyboard))
-                    print("Já faz uma desde a ultima consulta")
-                else:
-                   print("Ainda não faz uma desde a ultima consulta.")
-            # if weeks_pregnant == 10:
-            #     message = f""
-            #     send_mock_message(mother_id, message, "WhatsApp")
+                    if today_date >= ultima_consulta + timedelta(days=7):
+                        mother["ultima_consulta"] = today_date.strftime("%d/%m/%Y")
+                        message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
+                        📅 De acordo com seu período gestacional, suas consultas devem ocorrer [inserir frequência: mensalmente, quinzenalmente ou semanalmente]. Escolha uma das opções abaixo para marcar sua próxima consulta:
+                        1. {consultas_disponiveis[0]}\n2. {consultas_disponiveis[1]}\n3. {consultas_disponiveis[2]}
+                        Caso precise de outro horário, responda com a palavra "Outro" e nossa equipe entrará em contato para mais opções.
+                        Após a confirmação, você receberá um lembrete antes da consulta."""
+                        MESSAGE_QUEUE.put((message, custom_keyboard))
+
+        time.sleep(86400)  
+
 
 def monitor_and_send_messages():
     """Continuously process message queue."""
     while True:
         if not MESSAGE_QUEUE.empty():
             msg = MESSAGE_QUEUE.get()
-
+            print(MESSAGE_QUEUE)
             if isinstance(msg, tuple):
                 text, keyboard = msg
                 bot.send_message(text, keyboard=keyboard)
             else:
                 bot.send_message(msg)
+            MESSAGE_QUEUE.task_done()  
         time.sleep(1)
 
 def listen_for_updates():

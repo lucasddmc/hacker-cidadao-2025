@@ -113,7 +113,7 @@ class TelegramBot:
                 response_text = f"Sua consulta foi marcada com sucesso para o dia {text}! 📅✅"
                 GESTANTES[1]['consultas_marcadas'].append(text)
 
-            self.send_message(response_text)
+            #self.send_message(response_text)
             self.last_update_id = current_update_id + 1
 
 # Initialize bot instance with credentials
