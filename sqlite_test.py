@@ -1,174 +1,162 @@
-import sqlite3
+from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
+import time
+import threading
+import queue
+from send_message import bot
+from data import *
 
-# Conexão com banco de dados SQLite em memória
-conn = sqlite3.connect(":memory:")
-cur = conn.cursor()
+app = Flask(__name__)
+mother_id_counter = 1
+def is_item_in_queue(q, item):
+    """Verifica se um item já está na fila."""
+    # Converte a fila em uma lista temporária para verificação
+    with q.mutex:  # Usa o mutex para garantir segurança em ambientes multithread
+        return item in list(q.queue)
+def update_gestante(unidade, mother_id=1):
+    GESTANTES[mother_id]["unidade_saude"] = UNIDADES_SAUDE[unidade]['nome']
+def daily_pregnancy_monitor():
+    """Check each mother's status daily and send messages if needed."""
+    while True:
+        today_date = datetime.today().date()
+        for mother_id, mother in list(GESTANTES.items()):
+            if "inicio_gestacao" in mother:
+                start_date = datetime.strptime(mother["inicio_gestacao"], "%d/%m/%Y").date()
+                weeks_pregnant = (today_date - start_date).days // 7
+                ultima_consulta = datetime.strptime(mother["ultima_consulta"], "%d/%m/%Y").date()
+
+                consultas_disponiveis = [
+                    today_date + timedelta(days=1),
+                    today_date + timedelta(days=2),
+                    today_date + timedelta(days=3)
+                ]
+
+                custom_keyboard = {
+                    "keyboard": [[{"text": str(date)}] for date in consultas_disponiveis],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+
+                
+                if weeks_pregnant == 12 and not mother.get("sent_week_12"):
+                    print("criando a mensagem")
+                    message = f"""Sua gestação está avançando, e a partir de agora já é possível realizar o exame de sexagem fetal para descobrir o sexo do bebê! 🩷💙
+                    Esse exame é opcional e pode ser feito a partir da 12ª semana de gestação, analisando uma amostra do seu sangue. Se tiver interesse, converse com um profissional de saúde para saber mais sobre a disponibilidade e como realizá-lo.
+                    Cada fase da gestação traz novas descobertas e momentos especiais."""  
+                    if not is_item_in_queue(MESSAGE_QUEUE, (message, custom_keyboard)):
+                        MESSAGE_QUEUE.put((message, custom_keyboard))
+                        print(f"Item adicionado: {message}")
+                    else:
+                        print(f"Item duplicado: {message}. Não será adicionado.")
+                   
+                    mother["sent_week_12"] = True  
+
+                
+                if weeks_pregnant <= 28:
+                    if (today_date.year > ultima_consulta.year or 
+                        (today_date.year == ultima_consulta.year and today_date.month > ultima_consulta.month)):
+                        mother["ultima_consulta"] = today_date.strftime("%d/%m/%Y")
+                        message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
+                        📅 De acordo com seu período gestacional, suas consultas devem ocorrer mensalmente. Escolha uma das opções abaixo para marcar sua próxima consulta:
+                        1. {consultas_disponiveis[0]}
+                        2. {consultas_disponiveis[1]}
+                        3. {consultas_disponiveis[2]}
+                        outro"""
+                        MESSAGE_QUEUE.put((message, custom_keyboard))
+
+                
+                elif weeks_pregnant <= 36:
+                    if today_date >= ultima_consulta + timedelta(days=15):
+                        mother["ultima_consulta"] = today_date.strftime("%d/%m/%Y")
+                        message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
+                        📅 De acordo com seu período gestacional, suas consultas devem ocorrer [inserir frequência: mensalmente, quinzenalmente ou semanalmente]. Escolha uma das opções abaixo para marcar sua próxima consulta:
+                        1. {consultas_disponiveis[0]}\n2. {consultas_disponiveis[1]}\n3. {consultas_disponiveis[2]}
+                        Caso precise de outro horário, responda com a palavra "Outro" e nossa equipe entrará em contato para mais opções.
+                        Após a confirmação, você receberá um lembrete antes da consulta."""
+                        MESSAGE_QUEUE.put((message, custom_keyboard))
+
+                
+                else:
+                    if today_date >= ultima_consulta + timedelta(days=7):
+                        mother["ultima_consulta"] = today_date.strftime("%d/%m/%Y")
+                        message = f"""Olá! 😊 Está na hora de agendar sua próxima consulta de pré-natal para garantir o melhor acompanhamento para você e seu bebê.
+                        📅 De acordo com seu período gestacional, suas consultas devem ocorrer [inserir frequência: mensalmente, quinzenalmente ou semanalmente]. Escolha uma das opções abaixo para marcar sua próxima consulta:
+                        1. {consultas_disponiveis[0]}\n2. {consultas_disponiveis[1]}\n3. {consultas_disponiveis[2]}
+                        Caso precise de outro horário, responda com a palavra "Outro" e nossa equipe entrará em contato para mais opções.
+                        Após a confirmação, você receberá um lembrete antes da consulta."""
+                        MESSAGE_QUEUE.put((message, custom_keyboard))
+
+        time.sleep(86400)  
 
 
+def monitor_and_send_messages():
+    """Continuously process message queue."""
+    while True:
+        if not MESSAGE_QUEUE.empty():
+            msg = MESSAGE_QUEUE.get()
+            print(MESSAGE_QUEUE)
+            if isinstance(msg, tuple):
+                text, keyboard = msg
+                bot.send_message(text, keyboard=keyboard)
+            else:
+                bot.send_message(msg)
+            MESSAGE_QUEUE.task_done()  
+        time.sleep(1)
 
-# Criação das tabelas
-cur.execute("""
-CREATE TABLE gestantes (
-    id INTEGER PRIMARY KEY,
-    nome TEXT,
-    telefone TEXT,
-    semana_gestacao INTEGER DEFAULT 0
-)""")
-cur.execute("""
-CREATE TABLE bebes (
-    id INTEGER PRIMARY KEY,
-    mae_id INTEGER,
-    nome TEXT,
-    data_nascimento TEXT,
-    idade_meses INTEGER DEFAULT 0
-)""")
-cur.execute("""
-CREATE TABLE consultas (
-    id INTEGER PRIMARY KEY,
-    mae_id INTEGER,
-    bebe_id INTEGER,
-    data TEXT,
-    descricao TEXT,
-    lembrete_enviado INTEGER DEFAULT 0
-)""")
-cur.execute("""
-CREATE TABLE mensagens (
-    id INTEGER PRIMARY KEY,
-    mae_id INTEGER,
-    conteudo TEXT,
-    canal TEXT
-)""")
+def listen_for_updates():
+    """Continuously check for Telegram updates."""
+    while True:
+        bot.handle_updates()
+        time.sleep(1)
 
-# Triggers para marcos da gravidez (3 meses e 6 meses)
-cur.execute("""
-CREATE TRIGGER marco_3_meses
-AFTER UPDATE ON gestantes
-WHEN new.semana_gestacao >= 12 AND old.semana_gestacao < 12
-BEGIN
-    INSERT INTO mensagens(mae_id, conteudo, canal)
-    VALUES (
-        new.id,
-        'Parabéns! Você completou 3 meses de gravidez. Aproveite os exames pré-natais gratuitos e cuide bem da sua saúde.',
-        'SMS'
-    );
-END;
-""")
-cur.execute("""
-CREATE TRIGGER marco_6_meses
-AFTER UPDATE ON gestantes
-WHEN new.semana_gestacao >= 24 AND old.semana_gestacao < 24
-BEGIN
-    INSERT INTO mensagens(mae_id, conteudo, canal)
-    VALUES (
-        new.id,
-        'Você atingiu 6 meses de gravidez! Continue se preparando para o parto. Lembre-se de seus direitos, como licença-maternidade em breve.',
-        'WhatsApp'
-    );
-END;
-""")
+@app.route('/api/mother', methods=['GET'])
+def get_mothers():
+    """ Returns all mothers in the system """
+    return jsonify(GESTANTES), 200
 
-# Trigger para evento de nascimento do bebê (pós-parto)
-cur.execute("""
-CREATE TRIGGER evento_nascimento
-AFTER INSERT ON bebes
-BEGIN
-    INSERT INTO mensagens(mae_id, conteudo, canal)
-    VALUES (
-        new.mae_id,
-        'Parabéns pelo nascimento do seu bebê ' || new.nome || '! Agende a consulta pós-parto e registre o bebê para ter acesso aos benefícios, como a licença-maternidade.',
-        'SMS'
-    );
-END;
-""")
+@app.route('/api/mother', methods=['POST'])
+def add_mother():
+    """ Adds a new mother to the system (mock insert) """
+    global mother_id_counter
+    data = request.get_json()
 
-# Triggers para marcos do bebê (6 meses e 12 meses de vida)
-cur.execute("""
-CREATE TRIGGER bebe_6_meses
-AFTER UPDATE ON bebes
-WHEN new.idade_meses >= 6 AND old.idade_meses < 6
-BEGIN
-    INSERT INTO mensagens(mae_id, conteudo, canal)
-    VALUES (
-        new.mae_id,
-        'Seu bebê ' || new.nome || ' completou 6 meses! Não se esqueça das vacinas desta idade e do acompanhamento pediátrico gratuito no posto de saúde.',
-        'WhatsApp'
-    );
-END;
-""")
-cur.execute("""
-CREATE TRIGGER bebe_12_meses
-AFTER UPDATE ON bebes
-WHEN new.idade_meses >= 12 AND old.idade_meses < 12
-BEGIN
-    INSERT INTO mensagens(mae_id, conteudo, canal)
-    VALUES (
-        new.mae_id,
-        'Seu bebê ' || new.nome || ' fez 1 aninho! Leve-o ao pediatra para um check-up e mantenha as vacinas em dia – todos disponíveis gratuitamente.',
-        'WhatsApp'
-    );
-END;
-""")
+    mother_id = mother_id_counter
+    mother_id_counter += 1
 
-# Triggers para lembretes de consultas (mãe e bebê)
-cur.execute("""
-CREATE TRIGGER lembrete_consulta_mae
-AFTER UPDATE ON consultas
-WHEN new.lembrete_enviado = 1 AND old.lembrete_enviado = 0 AND new.bebe_id IS NULL
-BEGIN
-    INSERT INTO mensagens(mae_id, conteudo, canal)
-    VALUES (
-        new.mae_id,
-        'Lembrete: Amanhã você tem uma consulta marcada: ' || new.descricao || '. Não falte!',
-        'SMS'
-    );
-END;
-""")
-cur.execute("""
-CREATE TRIGGER lembrete_consulta_bebe
-AFTER UPDATE ON consultas
-WHEN new.lembrete_enviado = 1 AND old.lembrete_enviado = 0 AND new.bebe_id IS NOT NULL
-BEGIN
-    INSERT INTO mensagens(mae_id, conteudo, canal)
-    VALUES (
-        new.mae_id,
-        'Lembrete: Amanhã seu bebê ' || (SELECT nome FROM bebes WHERE id = new.bebe_id) || ' tem uma consulta: ' || new.descricao || '. Não falte!',
-        'SMS'
-    );
-END;
-""")
+    GESTANTES[mother_id] = {
+        "nome": data.get("nome"),
+        "inicio_gestacao": data.get("inicio_gestacao", None), 
+        "ultima_consulta": data.get("ultima_consulta", None)
+    }
+    custom_keyboard = {
+        "keyboard": [
+            [{"text": f"📍 {UNIDADES_SAUDE[0]['nome']} – {UNIDADES_SAUDE[0]['endereco']}"}],
+            [{"text": f"📍 {UNIDADES_SAUDE[1]['nome']} – {UNIDADES_SAUDE[1]['endereco']}"}],
+            [{"text": f"📍 {UNIDADES_SAUDE[2]['nome']} – {UNIDADES_SAUDE[2]['endereco']}"}],
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": True
+    }
+    # First welcome message
+    welcome_msg = f"""Olá, {data.get("nome")}! 😊 Parabéns por iniciar o seu pré-natal! 
+    Para garantir o melhor acompanhamento para você e seu bebê, é importante agendar sua próxima consulta o quanto antes.
+    Aqui estão as Unidades Saúde (US) mais próximas do seu endereço"""
+    MESSAGE_QUEUE.put((welcome_msg, custom_keyboard))
+    transport_msg = f"""🎉 Seu Passe Livre para Gestantes está a caminho! 🚌💙  
+    Agora que você iniciou seu pré-natal, você tem direito ao Passe Livre para Gestantes, garantindo transporte gratuito no transporte público durante toda a gestação. Esse benefício facilita suas idas às consultas e exames, ajudando a garantir um acompanhamento completo para você e seu bebê.  
+    📦 O vale já está a caminho da sua residência e, em alguns dias, estará em suas mãos. Fique atenta à entrega! 💙"""
+    MESSAGE_QUEUE.put(transport_msg)
+    return jsonify({"id": mother_id, "message": "Mãe cadastrada com sucesso!"}), 201
 
-conn.commit()
 
-# Inserção de uma gestante fictícia
-cur.execute("INSERT INTO gestantes (nome, telefone, semana_gestacao) VALUES (?, ?, ?)",
-            ("Maria", "+5581999999999", 0))
+if __name__ == '__main__':
+    # import os
+    # if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+    #     bot.initialize_update_id()
+        
+    # Start background threads
+    threading.Thread(target=monitor_and_send_messages, daemon=True).start()
+    threading.Thread(target=listen_for_updates, daemon=True).start()
+    threading.Thread(target=daily_pregnancy_monitor, daemon=True).start()
 
-# Atualização da semana de gestação para simular marcos:
-cur.execute("UPDATE gestantes SET semana_gestacao = 12 WHERE nome = 'Maria'")   # 12 semanas (3 meses)
-cur.execute("UPDATE gestantes SET semana_gestacao = 24 WHERE nome = 'Maria'")   # 24 semanas (6 meses)
-
-# Inserção de um bebê (simula o parto/nascimento)
-cur.execute("INSERT INTO bebes (mae_id, nome, data_nascimento, idade_meses) VALUES (?, ?, ?, ?)",
-            (1, "João", "2025-03-12", 0))
-
-# Atualização da idade do bebê para simular crescimento:
-cur.execute("UPDATE bebes SET idade_meses = 6 WHERE nome = 'João'")   # Bebê chega a 6 meses
-cur.execute("UPDATE bebes SET idade_meses = 12 WHERE nome = 'João'")  # Bebê chega a 12 meses (1 ano)
-
-# Agendamento de uma consulta (ex: consulta pediátrica futura)
-data_hoje = datetime.now().date()
-data_amanha = data_hoje + timedelta(days=1)
-cur.execute("INSERT INTO consultas (mae_id, bebe_id, data, descricao, lembrete_enviado) VALUES (?, ?, ?, ?, ?)",
-            (1, 1, data_amanha.isoformat(), "Consulta pediátrica de rotina", 0))
-
-# Simulação do envio de lembrete um dia antes da consulta (marcando lembrete_enviado = 1)
-cur.execute("UPDATE consultas SET lembrete_enviado = 1 WHERE data = ? AND lembrete_enviado = 0",
-            (data_amanha.isoformat(),))
-conn.commit()
-
-# Consulta à tabela de mensagens para obter todas as mensagens geradas
-cur.execute("SELECT canal, conteudo FROM mensagens ORDER BY id")
-mensagens_geradas = cur.fetchall()
-for canal, conteudo in mensagens_geradas:
-    print(f"{canal}: {conteudo}")
+    app.run(host="0.0.0.0", port=5001, debug=True)
