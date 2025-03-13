@@ -61,42 +61,6 @@ def add_mother():
     return jsonify({'id': mother_id, 'nome': nome, 'telefone': telefone, 'semana_gestacao': semana_gestacao}), 201
 
 
-# Endpoint to update gestation week (simulate progress in pregnancy)
-@app.route('/api/mother/<int:mother_id>', methods=['PUT'])
-def update_mother(mother_id):
-    data = request.get_json()
-    new_week = data.get('semana_gestacao')
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-    # Retrieve old value (for demonstration)
-    cur.execute("SELECT semana_gestacao FROM gestantes WHERE id = ?", (mother_id,))
-    row = cur.fetchone()
-    if row is None:
-        return jsonify({'error': 'Mother not found'}), 404
-
-    old_week = row['semana_gestacao']
-
-    cur.execute("UPDATE gestantes SET semana_gestacao = ? WHERE id = ?", (new_week, mother_id))
-    conn.commit()
-
-    # Check for milestones and insert notification messages
-    if old_week < 12 <= new_week:
-        message = f"Parabéns! Você completou 3 meses de gravidez."
-        canal = "SMS"
-    elif old_week < 24 <= new_week:
-        message = f"Você atingiu 6 meses de gravidez! Continue se preparando para o parto."
-        canal = "WhatsApp"
-    else:
-        message = None
-
-    if message:
-        cur.execute("INSERT INTO mensagens (mae_id, conteudo, canal) VALUES (?, ?, ?)",
-                    (mother_id, message, canal))
-        conn.commit()
-    conn.close()
-    return jsonify({'id': mother_id, 'semana_gestacao': new_week}), 200
-
 
 # Endpoint to list all messages (simulate notifications that would be sent)
 @app.route('/api/messages', methods=['GET'])
