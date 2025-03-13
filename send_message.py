@@ -9,7 +9,7 @@ def send_message(telefone, message):
     print(telefone)
     print(message)
     pywhatkit.start_server(port=8000, print_msg=True)
-    pywhatkit.sendwhatmsg_instantly("+5581997566939", "iaiiii ana paula", 0)
+    pywhatkit.sendwhatmsg_instantly("+5581997804085", "iaiiii ana paula", 0)
     # headers = {
     #     'Authorization': f'Bearer {TOKEN}',
     #     'Content-Type': 'application/json'
