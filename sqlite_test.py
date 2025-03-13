@@ -10,19 +10,21 @@ cur = conn.cursor()
 # Criação das tabelas
 cur.execute("""
 CREATE TABLE gestantes (
-    id INTEGER PRIMARY KEY,
+    cpf TEXT PRIMARY KEY, 
     nome TEXT,
     telefone TEXT,
+    endereco TEXT, 
     semana_gestacao INTEGER DEFAULT 0, 
     quantidade_consultas INTEGER DEFAULT 0
 )""")
 cur.execute("""
 CREATE TABLE bebes (
     id INTEGER PRIMARY KEY,
+    cpf TEXT,
     mae_id INTEGER,
     nome TEXT,
     data_nascimento TEXT,
-    idade_meses INTEGER DEFAULT 0
+    vivo INTEGER
 )""")
 cur.execute("""
 CREATE TABLE consultas (
@@ -40,21 +42,28 @@ CREATE TABLE mensagens (
     conteudo TEXT,
     canal TEXT
 )""")
+cur.execute("""
+CREATE TABLE UBS(
+    id INTEGER PRIMARY KEY,
+    nome TEXT, 
+    endereco TEXT
+)""")
 
 # Triggers para marcos da gravidez (3 meses e 6 meses)
-cur.execute("""
-CREATE TRIGGER marco_3_meses
-AFTER UPDATE ON gestantes
-WHEN new.semana_gestacao >= 12 AND old.semana_gestacao < 12
-BEGIN
-    INSERT INTO mensagens(mae_id, conteudo, canal)
-    VALUES (
-        new.id,
-        'Parabéns! Você completou 3 meses de gravidez. Aproveite os exames pré-natais gratuitos e cuide bem da sua saúde.',
-        'SMS'
-    );
-END;
-""")
+
+#cur.execute("""
+#CREATE TRIGGER marco_3_meses
+#AFTER UPDATE ON gestantes
+#WHEN new.semana_gestacao >= 12 AND old.semana_gestacao < 12
+#BEGIN
+#   INSERT INTO mensagens(mae_id, conteudo, canal)
+#    VALUES (
+#        new.id,
+#        'Parabéns! Você completou 3 meses de gravidez. Aproveite os exames pré-natais gratuitos e cuide bem da sua saúde.',
+#        'SMS'
+#    );
+#END;
+#""") 
 cur.execute("""
 CREATE TRIGGER marco_6_meses
 AFTER UPDATE ON gestantes
