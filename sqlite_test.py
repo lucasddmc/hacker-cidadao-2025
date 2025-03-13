@@ -1,20 +1,39 @@
 from flask import Flask, request, jsonify
 from datetime import datetime
-
+from send_message import send_message
+import time
+import threading
 app = Flask(__name__)
+# Mock database (In-Memory) with one pre-populated pregnant woman
+gestantes = {
+    1: {
+        "nome": "Ana Souza",
+        "telefone": "+5581999999999",
+        "semana_gestacao": 10  # Already in 10th week
+    }
+}
+mensagens = []  # Stores sent messages
 
-# Mock database (In-Memory)
-gestantes = {}  # Stores mothers data
-mensagens = []  # Stores sent messages (mock for SMS/WhatsApp)
+# Track last used ID (start from 2 since we have 1 pre-populated)
+mother_id_counter = 2
 
-# Generate unique ID (simple counter)
-mother_id_counter = 1
 
+def monitor_and_send_messages():
+    """ Background thread that checks for pending messages every 5 seconds """
+    while True:
+        time.sleep(5)
+        if mensagens:
+            for msg in mensagens[:]:  # Iterate over a copy to modify the list safely
+                send_message(msg["telefone"], msg["message"])
+                mensagens.remove(msg)  # Remove from queue after sending
+
+# Run message sender thread
+threading.Thread(target=monitor_and_send_messages, daemon=True).start()
 
 def send_mock_message(mother_id, message, channel="SMS"):
     """ Simulates sending a message via SMS or WhatsApp """
     mensagens.append({
-        "mother_id": mother_id,
+        "telefone": "5581997804085",
         "message": message,
         "channel": channel,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -91,4 +110,4 @@ def birth_event():
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5001, debug=True)
