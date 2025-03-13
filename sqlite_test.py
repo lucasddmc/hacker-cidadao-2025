@@ -4,11 +4,28 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Mock database (In-Memory)
-gestantes = {}  # Stores mothers data
+gestantes = {
+    1: {
+        "nome": "Letícia",
+        "telefone": "000000000",
+        "semana_gestacao": 0, 
+        "filhos": []
+    }
+}  # Stores mothers data
+bebes = {}
+consultas = {
+    1: {
+        "tipo": "pre-natal", 
+        "data": datetime.datetime.now(), 
+        "mother_id": 1
+    }
+}
+
 mensagens = []  # Stores sent messages (mock for SMS/WhatsApp)
 
 # Generate unique ID (simple counter)
-mother_id_counter = 1
+mother_id_counter = 2
+baby_id_count = 1
 
 
 def send_mock_message(mother_id, message, channel="SMS"):
@@ -34,7 +51,8 @@ def add_mother():
     gestantes[mother_id] = {
         "nome": data.get("nome"),
         "telefone": data.get("telefone"),
-        "semana_gestacao": data.get("semana_gestacao", 0)
+        "semana_gestacao": data.get("semana_gestacao", 0), 
+        "filhos": data.get("filhos", [])
     }
 
     # First welcome message
@@ -73,7 +91,7 @@ def list_messages():
     """ Lists all mock messages sent """
     return jsonify(mensagens)
 
-
+#no birth precisa ser enviado as informações do bebê 
 @app.route('/api/birth', methods=['POST'])
 def birth_event():
     """ Simulates a birth event and sends postpartum messages """
@@ -84,10 +102,24 @@ def birth_event():
     if mother_id not in gestantes:
         return jsonify({"error": "Mãe não encontrada"}), 404
 
+    global baby_id_counter
+    baby_id = baby_id_counter
+    baby_id_counter += 1
+    bebes[baby_id] = {
+        "nome": nome_bebe, 
+        "vivo": data.get("vivo"), 
+        "nascimento": data.get("nascimento"), 
+        "mother_id": mother_id
+    }
     # Simulate postpartum message
-    send_mock_message(mother_id, f"Parabéns pelo nascimento do bebê {nome_bebe}! Agende a consulta pós-parto.", "SMS")
+    if(vivo == True): 
+        send_mock_message(mother_id, f"Parabéns pelo nascimento do bebê {nome_bebe}! Agende a consulta pós-parto.", "SMS")
+    else: 
+        #implementar como lidar com natimortos 
 
     return jsonify({"message": f"Notificação de nascimento enviada para {gestantes[mother_id]['nome']}"}), 201
+
+
 
 
 if __name__ == '__main__':
