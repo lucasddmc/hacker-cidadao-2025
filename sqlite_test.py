@@ -85,6 +85,15 @@ def update_mother(mother_id):
 
     return jsonify({"message": "Dados atualizados com sucesso!"}), 200
 
+@app.route('/api/consulta/<int:mother_id>', methods=['PUT']) 
+def create_consulta(): 
+    if mother_id not in gestantes:
+        return jsonify({"error": "Mãe não encontrada"}), 404
+    
+    data = request.get_json() 
+    
+
+
 
 @app.route('/api/messages', methods=['GET'])
 def list_messages():
